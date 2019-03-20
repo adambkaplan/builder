@@ -2,6 +2,7 @@ FROM docker.io/library/centos:7
 LABEL io.k8s.display-name="OpenShift Origin Builder" \
       io.k8s.description="This is a component of OpenShift Origin and is responsible for executing image builds." \
       io.openshift.tags="openshift,builder"
+ENV LANG="en_US.utf8"
 
 RUN INSTALL_PKGS=" \
       which tar wget hostname sysvinit-tools util-linux \
