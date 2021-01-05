@@ -212,7 +212,14 @@ func daemonlessProcessLimits() (defaultProcessLimits []string) {
 	return defaultProcessLimits
 }
 
-func buildDaemonlessImage(sc types.SystemContext, store storage.Store, isolation buildah.Isolation, contextDir string, optimization buildapiv1.ImageOptimizationPolicy, opts *docker.BuildImageOptions, blobCacheDirectory string) error {
+func buildDaemonlessImage(sc types.SystemContext,
+	store storage.Store,
+	isolation buildah.Isolation,
+	contextDir string,
+	optimization buildapiv1.ImageOptimizationPolicy,
+	opts *docker.BuildImageOptions,
+	blobCacheDirectory string,
+	defaultMountsFilePath string) error {
 	log.V(2).Infof("Building...")
 
 	args := make(map[string]string)
@@ -252,25 +259,18 @@ func buildDaemonlessImage(sc types.SystemContext, store storage.Store, isolation
 		}
 	}
 
-	var transientMounts []string
-	if st, err := os.Stat("/run/secrets"); err == nil && st.IsDir() {
-		// Add a bind of /run/secrets, to pass along anything that the
-		// runtime mounted from the node into our /run/secrets.
-		transientMounts = append(transientMounts, "/run/secrets:/run/secrets:ro,nodev,noexec,nosuid")
-	}
-
 	options := imagebuildah.BuildOptions{
-		ContextDirectory: contextDir,
-		PullPolicy:       pullPolicy,
-		Isolation:        isolation,
-		TransientMounts:  transientMounts,
-		Args:             args,
-		Output:           opts.Name,
-		Out:              opts.OutputStream,
-		Err:              opts.OutputStream,
-		ReportWriter:     opts.OutputStream,
-		OutputFormat:     buildah.Dockerv2ImageManifest,
-		SystemContext:    &systemContext,
+		ContextDirectory:      contextDir,
+		PullPolicy:            pullPolicy,
+		Isolation:             isolation,
+		DefaultMountsFilePath: defaultMountsFilePath,
+		Args:                  args,
+		Output:                opts.Name,
+		Out:                   opts.OutputStream,
+		Err:                   opts.OutputStream,
+		ReportWriter:          opts.OutputStream,
+		OutputFormat:          buildah.Dockerv2ImageManifest,
+		SystemContext:         &systemContext,
 		NamespaceOptions: buildah.NamespaceOptions{
 			{Name: string(specs.NetworkNamespace), Host: true},
 		},
@@ -535,13 +535,19 @@ type DaemonlessClient struct {
 	Store                   storage.Store
 	Isolation               buildah.Isolation
 	BlobCacheDirectory      string
+	DefaultMountsFilePath   string
 	ImageOptimizationPolicy buildapiv1.ImageOptimizationPolicy
 	builders                map[string]*buildah.Builder
 }
 
 // GetDaemonlessClient returns a valid implemenatation of the DockerClient
 // interface, or an error if the implementation couldn't be created.
-func GetDaemonlessClient(systemContext types.SystemContext, store storage.Store, isolationSpec, blobCacheDirectory string, imageOptimizationPolicy buildapiv1.ImageOptimizationPolicy) (client DockerClient, err error) {
+func GetDaemonlessClient(systemContext types.SystemContext,
+	store storage.Store,
+	isolationSpec string,
+	blobCacheDirectory string,
+	imageOptimizationPolicy buildapiv1.ImageOptimizationPolicy,
+	defaultMountsFilePath string) (client DockerClient, err error) {
 	isolation := buildah.IsolationDefault
 	switch strings.ToLower(isolationSpec) {
 	case "chroot":
@@ -558,6 +564,9 @@ func GetDaemonlessClient(systemContext types.SystemContext, store storage.Store,
 	if blobCacheDirectory != "" {
 		log.V(0).Infof("Caching blobs under %q.", blobCacheDirectory)
 	}
+	if defaultMountsFilePath != "" {
+		log.V(5).Infof("Using default mounts under %q.", defaultMountsFilePath)
+	}
 
 	return &DaemonlessClient{
 		SystemContext:           systemContext,
@@ -565,12 +574,13 @@ func GetDaemonlessClient(systemContext types.SystemContext, store storage.Store,
 		Isolation:               isolation,
 		BlobCacheDirectory:      blobCacheDirectory,
 		ImageOptimizationPolicy: imageOptimizationPolicy,
+		DefaultMountsFilePath:   defaultMountsFilePath,
 		builders:                make(map[string]*buildah.Builder),
 	}, nil
 }
 
 func (d *DaemonlessClient) BuildImage(opts docker.BuildImageOptions) error {
-	return buildDaemonlessImage(d.SystemContext, d.Store, d.Isolation, opts.ContextDir, d.ImageOptimizationPolicy, &opts, d.BlobCacheDirectory)
+	return buildDaemonlessImage(d.SystemContext, d.Store, d.Isolation, opts.ContextDir, d.ImageOptimizationPolicy, &opts, d.BlobCacheDirectory, d.DefaultMountsFilePath)
 }
 
 func (d *DaemonlessClient) PushImage(opts docker.PushImageOptions, auth docker.AuthConfiguration) (string, error) {

@@ -161,7 +161,12 @@ func newBuilderConfigFromEnvironment(out io.Writer, needsDocker bool) (*builderC
 			imageOptimizationPolicy = buildapiv1.ImageOptimizationSkipLayers
 		}
 
-		dockerClient, err := bld.GetDaemonlessClient(systemContext, store, os.Getenv("BUILD_ISOLATION"), cfg.blobCache, imageOptimizationPolicy)
+		dockerClient, err := bld.GetDaemonlessClient(systemContext,
+			store,
+			os.Getenv("BUILD_ISOLATION"),
+			cfg.blobCache,
+			imageOptimizationPolicy,
+			os.Getenv("BUILD_MOUNTS_CONF_PATH"))
 		if err != nil {
 			return nil, fmt.Errorf("no daemonless store: %v", err)
 		}
